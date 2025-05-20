@@ -38,4 +38,10 @@ public class UserRepository {
         users.remove(id);
         return Mono.empty();
     }
+    
+    // New method to find users by name (case-insensitive)
+    public Flux<User> findByNameContaining(String namePart) {
+        return Flux.fromIterable(users.values())
+                .filter(user -> user.getName().toLowerCase().contains(namePart.toLowerCase()));
+    }
 }

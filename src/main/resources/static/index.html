@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Reactive Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .card {
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+            background-color: #f9f9f9;
+        }
+        .stats {
+            font-size: 24px;
+            text-align: center;
+            padding: 20px;
+            background-color: #e9f7ef;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        #search {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            font-size: 16px;
+        }
+        button {
+            padding: 8px 12px;
+            margin: 5px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>Reactive User Dashboard</h1>
+    
+    <div class="stats">
+        <div>Active Users: <span id="activeUsers">-</span></div>
+        <div>Total Users: <span id="totalUsers">-</span></div>
+        <div>Last Update: <span id="lastUpdate">-</span></div>
+    </div>
+    
+    <input type="text" id="search" placeholder="Search users by name..." />
+    
+    <div>
+        <button onclick="loadUsers()">Load All Users</button>
+        <button onclick="loadUsersMerged()">Load Merged (Fast+Slow)</button>
+        <button onclick="loadUsersConcatenated()">Load Concatenated</button>
+        <button onclick="clearResults()">Clear Results</button>
+    </div>
+    
+    <h2>Results:</h2>
+    <div id="results"></div>
+    
+    <script>
+        // Start the stats stream
+        const statsSource = new EventSource('/api/stats/users');
+        statsSource.onmessage = function(event) {
+            const stats = JSON.parse(event.data);
+            document.getElementById('activeUsers').textContent = stats.activeUsers;
+            document.getElementById('totalUsers').textContent = stats.totalUsers;
+            document.getElementById('lastUpdate').textContent = new Date(stats.timestamp).toLocaleTimeString();
+        };
+        
+        // Search as you type
+        let searchTimeout;
+        document.getElementById('search').addEventListener('input', function(e) {
+            clearTimeout(searchTimeout);
+            const query = e.target.value.trim();
+            
+            if (query.length === 0) {
+                clearResults();
+                return;
+            }
+            
+            searchTimeout = setTimeout(() => {
+                clearResults();
+                const searchSource = new EventSource(`/api/users/search/stream?name=${encodeURIComponent(query)}`);
+                searchSource.onmessage = function(event) {
+                    const user = JSON.parse(event.data);
+                    addUserCard(user);
+                };
+                searchSource.onerror = function() {
+                    searchSource.close();
+                };
+            }, 300);
+        });
+        
+        function loadUsers() {
+            clearResults();
+            const usersSource = new EventSource('/api/users/stream');
+            usersSource.onmessage = function(event) {
+                const user = JSON.parse(event.data);
+                addUserCard(user);
+            };
+            usersSource.onerror = function() {
+                usersSource.close();
+            };
+        }
+        
+        function loadUsersMerged() {
+            clearResults();
+            const usersSource = new EventSource('/api/users/merged');
+            usersSource.onmessage = function(event) {
+                const user = JSON.parse(event.data);
+                addUserCard(user, 'Merged Stream');
+            };
+            usersSource.onerror = function() {
+                usersSource.close();
+            };
+        }
+        
+        function loadUsersConcatenated() {
+            clearResults();
+            const usersSource = new EventSource('/api/users/concatenated');
+            usersSource.onmessage = function(event) {
+                const user = JSON.parse(event.data);
+                addUserCard(user, 'Concatenated Stream');
+            };
+            usersSource.onerror = function() {
+                usersSource.close();
+            };
+        }
+        
+        function addUserCard(user, source = '') {
+            const card = document.createElement('div');
+            card.className = 'card';
+            
+            let timestamp = new Date().toLocaleTimeString();
+            let sourceText = source ? `<p><strong>Source:</strong> ${source}</p>` : '';
+            
+            card.innerHTML = `
+                <h3>${user.name}</h3>
+                <p><strong>ID:</strong> ${user.id}</p>
+                <p><strong>Email:</strong> ${user.email}</p>
+                ${sourceText}
+                <p><small>Received at: ${timestamp}</small></p>
+            `;
+            
+            document.getElementById('results').prepend(card);
+        }
+        
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+            // Close all event sources except stats
+            const sources = document.querySelectorAll('EventSource');
+            sources.forEach(source => {
+                if (source !== statsSource) {
+                    source.close();
+                }
+            });
+        }
+    </script>
+</body>
+</html>
